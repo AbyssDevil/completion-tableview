@@ -9,21 +9,24 @@
 import Foundation
 import UIKit
 
-class CompletionTableView : UITableView, UITableViewDelegate, UITableViewDataSource
+class CompletionTableView : UITableView
 {
     private let relatedTextField : UITextField!
     private let inView : UIView!
     private let searchInArray : [String]!
     private var tableCellIdentifier : String?
-    
     private var completionsRegex : [String] = ["^#@"]
-    var maxResultsToShow : Int = 5
-    var maxSelectedElements : Int = 1
-    var showSelected : Bool = false
+    
+    /// Set a maximum of results that should be shown. When not set (nil) no maximum will be applied and all results will be shown.
+    var maxResultsToShow: Int?
+    var maxSelectedElements = 1
+    /// Set a maximum height of the completion tableView. When not set (nil) no maximum calculation will be applied.
+    var maxHeight: Int?
+    var showSelected = false
     var resultsArray : [String] = []
     var selectedElements : [String] = []
-    var completionCellForRowAtIndexPath : ((tableView: CompletionTableView!, indexPath: NSIndexPath!) -> UITableViewCell!)? = nil
-    var completionDidSelectRowAtIndexPath : ((tableView: CompletionTableView!, indexPath: NSIndexPath!) -> Void)? = nil
+    var completionCellForRowAtIndexPath : ((tableView: CompletionTableView, indexPath: NSIndexPath) -> UITableViewCell!)? = nil
+    var completionDidSelectRowAtIndexPath : ((tableView: CompletionTableView, indexPath: NSIndexPath, value: String) -> Void)? = nil
     
     init(relatedTextField: UITextField, inView: UIView, searchInArray: [String], tableCellNibName: String?, tableCellIdentifier: String?)
     {
@@ -31,8 +34,12 @@ class CompletionTableView : UITableView, UITableViewDelegate, UITableViewDataSou
         self.searchInArray = searchInArray
         self.tableCellIdentifier = tableCellIdentifier
         self.inView = inView
-        let customFrame = CGRectMake(self.relatedTextField!.frame.origin.x, self.relatedTextField!.frame.origin.y + self.relatedTextField!.frame.height, self.relatedTextField!.frame.width, 0)
+        
+        let customFrame = CGRect(x: self.relatedTextField.frame.origin.x, y: self.relatedTextField.frame.origin.y + self.relatedTextField.frame.height,
+                                 width: self.relatedTextField.frame.width, height: 0)
+        
         super.init(frame: customFrame, style: UITableViewStyle.Plain)
+        
         self.rowHeight = 44.0
         
         if tableCellNibName != nil {
@@ -47,12 +54,11 @@ class CompletionTableView : UITableView, UITableViewDelegate, UITableViewDataSou
             self.rowHeight = tmpCell!.frame.height
         }
         
-        self.separatorStyle = UITableViewCellSeparatorStyle.None
         self.layer.cornerRadius = 5.0
         self.delegate = self
         self.dataSource = self
-        self.bounces = false
         self.inView.addSubview(self)
+        
         self.relatedTextField!.addTarget(self, action: #selector(CompletionTableView.onRelatedTextFieldEditingChanged(_:)), forControlEvents: UIControlEvents.EditingChanged)
         self.relatedTextField!.addTarget(self, action: #selector(CompletionTableView.onRelatedTextFieldEndEditing(_:)), forControlEvents: UIControlEvents.EditingDidEnd)
     }
@@ -61,45 +67,45 @@ class CompletionTableView : UITableView, UITableViewDelegate, UITableViewDataSou
         fatalError("init(coder:) has not been implemented")
     }
     
-    func onRelatedTextFieldEditingChanged(sender: UITextField)
+    @objc private func onRelatedTextFieldEditingChanged(sender: UITextField)
     {
         self.tryCompletion(sender.text!, animated: true)
     }
     
-    func onRelatedTextFieldEndEditing(sender: UITextField)
+    @objc private func onRelatedTextFieldEndEditing(sender: UITextField)
     {
-        self.hide(true)
-        self.relatedTextField!.text = ""
+        self.hide(animated: true)
+        self.relatedTextField.text = ""
     }
     
-    func tryCompletion(withValue: String, animated: Bool)
+    private func tryCompletion(withValue: String, animated: Bool)
     {
-        if withValue.isEmpty {
-            self.hide(true)
+        guard !withValue.isEmpty else {
+            self.hide(animated: true)
             return
         }
         
         self.resultsArray.removeAll(keepCapacity: false)
         var maxResultsReached = false
+        
         for regexString in self.completionsRegex {
             let pattern = regexString.stringByReplacingOccurrencesOfString("#@", withString: withValue)
             
             do {
                 let regex = try NSRegularExpression(pattern: pattern, options: .CaseInsensitive)
                 
-                
-                
                 for entry in self.searchInArray {
-                    if self.resultsArray.count >= self.maxResultsToShow && self.maxResultsToShow != 0 {
+                    if self.maxResultsToShow != nil && (self.resultsArray.count >= self.maxResultsToShow && self.maxResultsToShow != 0) {
                         maxResultsReached = true
                         break
                     }
                     
-                    //let matches = regex.matchesInString(entry, options: nil, range: NSMakeRange(0, count(entry)))
                     let matches = regex.matchesInString(entry, options: .Anchored, range: NSMakeRange(0, entry.characters.count ))
                     
-                    //if matches.count > 0 && !contains(self.resultsArray, entry) && (self.showSelected ? true : !contains(self.selectedElements, entry)) {
-                    if matches.count > 0 && !self.resultsArray.contains(entry) && (self.showSelected ? true : !self.selectedElements.contains(entry)) {
+                    if matches.count > 0
+                        && !self.resultsArray.contains(entry)
+                        && (self.showSelected ? true : !self.selectedElements.contains(entry)) {
+                        
                         self.resultsArray.append(entry)
                     }
                 }
@@ -116,8 +122,11 @@ class CompletionTableView : UITableView, UITableViewDelegate, UITableViewDataSou
         
         self.reloadData()
         self.inView.bringSubviewToFront(self)
-        self.show(animated)
+        self.show(animated: animated)
     }
+    
+    
+    //MARK: - Select/Deselect manually
     
     func selectElement(element: String, maxSelectedElementsReached: (() -> Void)?) -> Bool
     {
@@ -150,6 +159,47 @@ class CompletionTableView : UITableView, UITableViewDelegate, UITableViewDataSou
         self.selectedElements.removeAtIndex(indexToRemove)
     }
     
+    
+    //MARK: - Show & Hide
+    
+    func show(animated animated: Bool)
+    {
+        var newRect = self.frame
+        let height = self.rowHeight * CGFloat(self.resultsArray.count)
+        newRect.size.height = self.maxHeight != nil ? min(CGFloat(self.maxHeight!), height) : height
+        
+        if !animated {
+            self.frame = newRect
+            return
+        }
+        
+        UIView.animateWithDuration(0.25) { 
+            self.frame = newRect
+        }
+    }
+    
+    func hide(animated animated: Bool)
+    {
+        let originRect = CGRect(x: self.relatedTextField.frame.origin.x, y: self.relatedTextField.frame.origin.y + self.relatedTextField.frame.height,
+                                width: self.relatedTextField.frame.width, height: self.frame.height)
+        let finalRect = CGRect(x: originRect.origin.x, y: originRect.origin.y, width: originRect.width, height: 0)
+        
+        if !animated {
+            self.frame = finalRect
+            return
+        }
+        
+        UIView.animateWithDuration(0.25) {
+            self.frame = finalRect
+        }
+    }
+}
+
+
+//MARK: - TableView Delegate & DataSource
+
+extension CompletionTableView: UITableViewDelegate, UITableViewDataSource {
+    
     func tableView(tableView: UITableView, numberOfRowsInSection section: Int) -> Int
     {
         return self.resultsArray.count
@@ -160,16 +210,19 @@ class CompletionTableView : UITableView, UITableViewDelegate, UITableViewDataSou
         if self.completionCellForRowAtIndexPath == nil {
             let cell : UITableViewCell = UITableViewCell(style: UITableViewCellStyle.Default, reuseIdentifier: "Identifier")
             
-            cell.textLabel!.text = self.resultsArray[indexPath.row] as String
+            cell.textLabel!.text = self.resultsArray[indexPath.row]
             return cell
         }
+        
         return self.completionCellForRowAtIndexPath!(tableView: tableView as! CompletionTableView, indexPath: indexPath)
     }
     
     func tableView(tableView: UITableView, didSelectRowAtIndexPath indexPath: NSIndexPath)
     {
         if self.completionDidSelectRowAtIndexPath != nil {
-            self.completionDidSelectRowAtIndexPath!(tableView: tableView as! CompletionTableView, indexPath: indexPath)
+            self.completionDidSelectRowAtIndexPath!(tableView: tableView as! CompletionTableView,
+                                                    indexPath: indexPath,
+                                                    value: self.resultsArray[indexPath.row] )
         }
     }
     
@@ -178,33 +231,4 @@ class CompletionTableView : UITableView, UITableViewDelegate, UITableViewDataSou
         return true
     }
     
-    func show(animated: Bool)
-    {
-        var newRect = self.frame
-        newRect.size.height = self.rowHeight * CGFloat(self.resultsArray.count)
-        
-        if !animated {
-            self.frame = newRect
-            return
-        }
-        
-        UIView.animateWithDuration(0.25, animations: {() -> Void in
-            self.frame = newRect
-        })
-    }
-    
-    func hide(animated: Bool)
-    {
-        let originRect = CGRect(x: self.relatedTextField!.frame.origin.x, y: self.relatedTextField!.frame.origin.y + self.relatedTextField!.frame.height, width: self.relatedTextField!.frame.width, height: self.frame.height)
-        let finalRect = CGRect(x: originRect.origin.x, y: originRect.origin.y, width: originRect.width, height: 0)
-        
-        if !animated {
-            self.frame = finalRect
-            return
-        }
-        
-        UIView.animateWithDuration(0.25, animations: {() -> Void in
-            self.frame = finalRect
-        })
-    }
 }
