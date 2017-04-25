@@ -11,17 +11,17 @@ import UIKit
 
 class CompletionTableView : UITableView, UITableViewDelegate, UITableViewDataSource
 {
-    var relatedTextField : UITextField?
-    var searchInArray : [String]!
-    var tableCellIdentifier : String?
-    var inView : UIView!
+    private let relatedTextField : UITextField!
+    private let inView : UIView!
+    private let searchInArray : [String]!
+    private var tableCellIdentifier : String?
     
+    private var completionsRegex : [String] = ["^#@"]
     var maxResultsToShow : Int = 5
     var maxSelectedElements : Int = 1
     var showSelected : Bool = false
     var resultsArray : [String] = []
     var selectedElements : [String] = []
-    var completionsRegex : [String] = ["^#@"]
     var completionCellForRowAtIndexPath : ((tableView: CompletionTableView!, indexPath: NSIndexPath!) -> UITableViewCell!)? = nil
     var completionDidSelectRowAtIndexPath : ((tableView: CompletionTableView!, indexPath: NSIndexPath!) -> Void)? = nil
     
@@ -40,7 +40,7 @@ class CompletionTableView : UITableView, UITableViewDelegate, UITableViewDataSou
             if self.tableCellIdentifier == nil {
                 fatalError("Identifier must be set when nib name is not nil")
             }
-            var tmpCell: UITableViewCell? = self.dequeueReusableCellWithIdentifier(self.tableCellIdentifier!) as? UITableViewCell
+            let tmpCell: UITableViewCell? = self.dequeueReusableCellWithIdentifier(self.tableCellIdentifier!) as UITableViewCell?
             if (tmpCell) == nil {
                 fatalError("No such object exists in the reusable-cell queue")
             }
@@ -53,17 +53,17 @@ class CompletionTableView : UITableView, UITableViewDelegate, UITableViewDataSou
         self.dataSource = self
         self.bounces = false
         self.inView.addSubview(self)
-        self.relatedTextField!.addTarget(self, action: "onRelatedTextFieldEditingChanged:", forControlEvents: UIControlEvents.EditingChanged)
-        self.relatedTextField!.addTarget(self, action: "onRelatedTextFieldEndEditing:", forControlEvents: UIControlEvents.EditingDidEnd)
+        self.relatedTextField!.addTarget(self, action: #selector(CompletionTableView.onRelatedTextFieldEditingChanged(_:)), forControlEvents: UIControlEvents.EditingChanged)
+        self.relatedTextField!.addTarget(self, action: #selector(CompletionTableView.onRelatedTextFieldEndEditing(_:)), forControlEvents: UIControlEvents.EditingDidEnd)
     }
     
-    required init(coder aDecoder: NSCoder) {
-        super.init(coder: aDecoder)
+    required init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
     
     func onRelatedTextFieldEditingChanged(sender: UITextField)
     {
-        self.tryCompletion(sender.text, animated: true)
+        self.tryCompletion(sender.text!, animated: true)
     }
     
     func onRelatedTextFieldEndEditing(sender: UITextField)
@@ -82,22 +82,34 @@ class CompletionTableView : UITableView, UITableViewDelegate, UITableViewDataSou
         self.resultsArray.removeAll(keepCapacity: false)
         var maxResultsReached = false
         for regexString in self.completionsRegex {
-            let pattern = regexString.stringByReplacingOccurrencesOfString("#@", withString: withValue, options: nil, range: nil)
-            let regex = NSRegularExpression(pattern: pattern as String, options: NSRegularExpressionOptions.CaseInsensitive, error: nil)
+            let pattern = regexString.stringByReplacingOccurrencesOfString("#@", withString: withValue)
             
-            for entry in self.searchInArray {
-                if self.resultsArray.count >= self.maxResultsToShow && self.maxResultsToShow != 0 {
-                    maxResultsReached = true
+            do {
+                let regex = try NSRegularExpression(pattern: pattern, options: .CaseInsensitive)
+                
+                
+                
+                for entry in self.searchInArray {
+                    if self.resultsArray.count >= self.maxResultsToShow && self.maxResultsToShow != 0 {
+                        maxResultsReached = true
+                        break
+                    }
+                    
+                    //let matches = regex.matchesInString(entry, options: nil, range: NSMakeRange(0, count(entry)))
+                    let matches = regex.matchesInString(entry, options: .Anchored, range: NSMakeRange(0, entry.characters.count ))
+                    
+                    //if matches.count > 0 && !contains(self.resultsArray, entry) && (self.showSelected ? true : !contains(self.selectedElements, entry)) {
+                    if matches.count > 0 && !self.resultsArray.contains(entry) && (self.showSelected ? true : !self.selectedElements.contains(entry)) {
+                        self.resultsArray.append(entry)
+                    }
+                }
+                
+                if maxResultsReached {
                     break
                 }
                 
-                let matches = regex!.matchesInString(entry, options: nil, range: NSMakeRange(0, count(entry)))
-                if matches.count > 0 && !contains(self.resultsArray, entry) && (self.showSelected ? true : !contains(self.selectedElements, entry)) {
-                    self.resultsArray.append(entry)
-                }
             }
-            
-            if maxResultsReached {
+            catch {
                 break
             }
         }
@@ -125,7 +137,7 @@ class CompletionTableView : UITableView, UITableViewDelegate, UITableViewDataSou
     
     func elementIsSelected(element: String) -> Bool
     {
-        return contains(self.selectedElements, element)
+        return self.selectedElements.contains(element)
     }
     
     func deselectElement(element: String)
@@ -146,7 +158,7 @@ class CompletionTableView : UITableView, UITableViewDelegate, UITableViewDataSou
     func tableView(tableView: UITableView, cellForRowAtIndexPath indexPath: NSIndexPath) -> UITableViewCell
     {
         if self.completionCellForRowAtIndexPath == nil {
-            var cell : UITableViewCell = UITableViewCell(style: UITableViewCellStyle.Default, reuseIdentifier: "Identifier")
+            let cell : UITableViewCell = UITableViewCell(style: UITableViewCellStyle.Default, reuseIdentifier: "Identifier")
             
             cell.textLabel!.text = self.resultsArray[indexPath.row] as String
             return cell
